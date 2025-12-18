@@ -1,0 +1,11 @@
+{
+  "default_data": "YXXXX0123456",
+  "header_url": "ymca.org",
+  "header_title": "YMCA",
+  "paths": {
+    "out_dir": "out",
+    "gen_dir": ".gen_barcodes",
+    "zint_exe": "zint-2.12.0/zint.exe",
+    "ocrb_ttf": "assets/fonts/OCR-B.ttf"
+  }
+}
