@@ -1,0 +1,105 @@
+{
+  "generated": "2025-12-18",
+  "associations": [
+    {
+      "name": "Central Florida YMCA",
+      "url": "ymcacf.org",
+      "title": "Central Florida YMCA"
+    },
+    {
+      "name": "YMCA BC",
+      "url": "gv.ymca.ca",
+      "title": "YMCA BC"
+    },
+    {
+      "name": "YMCA Calgary",
+      "url": "ymcacalgary.org",
+      "title": "YMCA Calgary"
+    },
+    {
+      "name": "YMCA Canada",
+      "url": "ymca.ca",
+      "title": "YMCA Canada"
+    },
+    {
+      "name": "YMCA of Greater Boston",
+      "url": "ymcaboston.org",
+      "title": "YMCA of Greater Boston"
+    },
+    {
+      "name": "YMCA of Greater Charlotte",
+      "url": "ymcacharlotte.org",
+      "title": "YMCA of Greater Charlotte"
+    },
+    {
+      "name": "YMCA of Greater Houston",
+      "url": "ymcahouston.org",
+      "title": "YMCA of Greater Houston"
+    },
+    {
+      "name": "YMCA of Greater Kansas City",
+      "url": "kansascityymca.org",
+      "title": "YMCA of Greater Kansas City"
+    },
+    {
+      "name": "YMCA of Greater New York",
+      "url": "ymcanyc.org",
+      "title": "YMCA of Greater New York"
+    },
+    {
+      "name": "YMCA of Greater San Francisco",
+      "url": "ymcasf.org",
+      "title": "YMCA of Greater San Francisco"
+    },
+    {
+      "name": "YMCA of Greater Seattle",
+      "url": "seattleymca.org",
+      "title": "YMCA of Greater Seattle"
+    },
+    {
+      "name": "YMCA of Greater Toronto",
+      "url": "ymcagta.org",
+      "title": "YMCA of Greater Toronto"
+    },
+    {
+      "name": "YMCA of Metropolitan Los Angeles",
+      "url": "ymcala.org",
+      "title": "YMCA of Metropolitan Los Angeles"
+    },
+    {
+      "name": "YMCA of Metropolitan Washington",
+      "url": "ymcadc.org",
+      "title": "YMCA of Metropolitan Washington"
+    },
+    {
+      "name": "YMCA of Metro Chicago",
+      "url": "ymcachicago.org",
+      "title": "YMCA of Metro Chicago"
+    },
+    {
+      "name": "YMCA of Northern Alberta",
+      "url": "ymcanab.ca",
+      "title": "YMCA of Northern Alberta"
+    },
+    {
+      "name": "YMCA of Southwestern Ontario",
+      "url": "ymcaswo.ca",
+      "title": "YMCA of Southwestern Ontario"
+    },
+    {
+      "name": "YMCA of the North",
+      "url": "ymcanorth.org",
+      "title": "YMCA of the North"
+    },
+    {
+      "name": "YMCA USA",
+      "url": "ymca.org",
+      "title": "YMCA USA"
+    },
+    {
+      "name": "YMCA-YWCA Vancouver Island",
+      "url": "vancouverislandy.com",
+      "title": "YMCA-YWCA Vancouver Island"
+    }
+  ]
+}
