@@ -1,0 +1,54 @@
+# =========================
+# Python / virtualenv
+# =========================
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+
+# =========================
+# Personal / local config (never commit)
+# =========================
+.user_config.json
+_local_only/
+
+
+# =========================
+# Binary deps / fonts (never commit)
+# =========================
+assets/fonts/*.ttf
+assets/fonts/*.otf
+zint-2.12.0/
+zint-2.12.0.zip
+*.exe
+
+
+# =========================
+# Generated outputs (never commit real barcodes)
+# =========================
+out/
+.gen_barcodes/
+templates/
+*.pdf
+*.png
+*.svg
+
+
+# =========================
+# Build artifacts (PyInstaller)
+# =========================
+build/
+dist/
+*.spec
+
+
+# =========================
+# OS / editor noise
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
