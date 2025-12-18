@@ -1,356 +1,383 @@
 #!/usr/bin/env python3
 """
-YMCA Card Maker GUI v1.5 (tkinter)
+YMCA Card Maker GUI (wizard)
 
-Adds:
-- Association dropdown (loaded from profiles/associations.json)
-- Editable Header URL + Header Title fields
-- Defaults support:
-  - "General" repo defaults: ymca.org / YMCA / YXXXX0123456
-  - Your local defaults can live in .user_config.json (gitignored)
+Front-end for: ymca_card_maker_v1_2.py
 
-The GUI writes .user_config.json (UTF-8 no BOM) so the CLI can pick it up.
+Flow:
+Step 1:
+- Enter raw code
+- Select report (dropdown)
+
+Step 2:
+- Shows only the options that apply to the selected report:
+  - checksum (disabled for ymca_letter_6up_mixed)
+  - text (barcode-only reports only)
+  - PNG sizing (barcode_png only)
+  - holes (YMCA PDF reports only)
+  - plus prefix, timestamp, out-dir, gen-dir
+
+It runs the CLI script and shows output, plus buttons to open output file/folder.
+
+Place this file next to ymca_card_maker_v1_2.py and run:
+  python .\ymca_card_maker_gui.py
 """
 
-from __future__ import annotations
-
-import json
-import io
-import contextlib
-import subprocess
+import os
 import sys
-from dataclasses import dataclass
-from pathlib import Path
+import subprocess
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox
+from pathlib import Path
 
-APP_VERSION = "1.5"
-
-def _detect_app_root() -> Path:
-    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        return Path(sys._MEIPASS).resolve()
+def _app_dir() -> Path:
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
 
-REPO_ROOT = _detect_app_root()
-CLI_PATH = REPO_ROOT / "src" / "ymca_card_maker.py"
-USER_CFG = (Path(sys.executable).resolve().parent / ".user_config.json") if getattr(sys, 'frozen', False) else (REPO_ROOT / ".user_config.json")
-PROFILE_DB = REPO_ROOT / "profiles" / "associations.json"
+def _res_dir() -> Path:
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return Path(getattr(sys, '_MEIPASS')).resolve()
+    return _app_dir()
 
-GENERAL_DEFAULTS = {
-    "header_url": "ymca.org",
-    "header_title": "YMCA",
-    "default_data": "YXXXX0123456",
-}
+APP_DIR = _app_dir()
+RES_DIR = _res_dir()
+
+# CLI lives in src/ inside the bundle (onefile) or repo (dev)
+_cli_candidate = RES_DIR / "src" / "ymca_card_maker.py"
+if not _cli_candidate.exists():
+    _cli_candidate = APP_DIR / "src" / "ymca_card_maker.py"
+CLI_SCRIPT_DEFAULT = str(_cli_candidate)
 
 REPORTS = [
-    ("barcode_svg", "Barcode SVG (single)"),
-    ("barcode_png", "Barcode PNG (single)"),
-    ("ymca_letter_1up", "YMCA Letter 1-up (A1 top-left)"),
-    ("ymca_cr80_1up", "YMCA CR80 1-up (card-sized page)"),
+    ("barcode_svg", "Barcode SVG"),
+    ("barcode_png", "Barcode PNG"),
+    ("ymca_letter_1up", "YMCA Letter 1-up (top-left slot)"),
+    ("ymca_cr80_1up", "YMCA CR80 1-up"),
     ("ymca_letter_6up", "YMCA Letter 6-up"),
-    ("ymca_letter_6up_mixed", "YMCA Letter 6-up Mixed (col A plain, col B checksum)"),
+    ("ymca_letter_6up_mixed", "YMCA Letter 6-up mixed (left plain, right checksum)"),
 ]
 
+def _load_default_profile() -> dict:
+    """Load repo/bundle defaults from profiles/default.json (fallback to profiles/ymca.json)."""
+    candidates = [
+        RES_DIR / "profiles" / "default.json",
+        APP_DIR / "profiles" / "default.json",
+        RES_DIR / "profiles" / "ymca.json",
+        APP_DIR / "profiles" / "ymca.json",
+    ]
+    for p in candidates:
+        try:
+            if p.exists():
+                return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            # keep trying other candidates
+            pass
+    return {}
 
-def read_json(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8-sig"))
+def _profile_default(profile: dict, key: str, fallback: str) -> str:
+    v = profile.get(key, fallback)
+    return str(v) if v is not None else fallback
+
+def _profile_path_default(profile: dict, key: str, fallback: str) -> str:
+    paths = profile.get("paths", {}) if isinstance(profile.get("paths", {}), dict) else {}
+    v = paths.get(key, fallback)
+    return str(v) if v is not None else fallback
 
 
-def write_json_no_bom(path: Path, obj: dict) -> None:
-    # Ensure no BOM: use utf-8 and write_text (Python doesn't add BOM)
-    path.write_text(json.dumps(obj, indent=2), encoding="utf-8")
+YMCA_PDF_REPORTS = {"ymca_letter_1up", "ymca_cr80_1up", "ymca_letter_6up", "ymca_letter_6up_mixed"}
+BARCODE_ONLY_REPORTS = {"barcode_svg", "barcode_png"}
 
 
-def load_associations() -> list[dict]:
+def open_path(path: Path) -> None:
     try:
-        db = read_json(PROFILE_DB)
-        items = db.get("associations", [])
-        if isinstance(items, list):
-            return items
+        if sys.platform.startswith("win"):
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.run(["open", str(path)], check=False)
+        else:
+            subprocess.run(["xdg-open", str(path)], check=False)
     except Exception:
         pass
-    return []
-
-
-@dataclass
-class PathsCfg:
-    zint_exe: str = ""
-    ocrb_ttf: str = ""
-    out_dir: str = ""
-    gen_dir: str = ""
 
 
 class App(tk.Tk):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
-        self.title(f"YMCA Card Maker {APP_VERSION}")
+        self.title("YMCA Card Maker")
+
+        # Load defaults from profiles/default.json (fallback to profiles/ymca.json)
+        self.profile = _load_default_profile()
         self.resizable(False, False)
 
-        self.associations = load_associations()
+        self.cli_path = tk.StringVar(value=CLI_SCRIPT_DEFAULT)
 
-        self.user_cfg = read_json(USER_CFG)
-        self.paths = PathsCfg(
-            zint_exe=self.user_cfg.get("zint_exe", ""),
-            ocrb_ttf=self.user_cfg.get("ocrb_ttf", ""),
-            out_dir=self.user_cfg.get("out_dir", ""),
-            gen_dir=self.user_cfg.get("gen_dir", ""),
-        )
+        self.raw_code = tk.StringVar(value=_profile_default(self.profile, "default_data", "YXXXX0123456"))
+        self.report = tk.StringVar(value=REPORTS[0][0])
 
-        self.var_data = tk.StringVar(value=self.user_cfg.get("default_data", GENERAL_DEFAULTS["default_data"]))
-        self.var_report = tk.StringVar(value=REPORTS[0][0])
+        self.opt_checksum = tk.BooleanVar(value=False)
+        self.opt_text = tk.BooleanVar(value=False)
+        self.opt_plus = tk.BooleanVar(value=False)
+        self.opt_timestamp = tk.BooleanVar(value=True)
 
-        self.var_checksum = tk.BooleanVar(value=False)
-        self.var_text = tk.BooleanVar(value=False)
-        self.var_plus = tk.BooleanVar(value=False)
-        self.var_timestamp = tk.BooleanVar(value=True)
-        self.var_no_holes = tk.BooleanVar(value=False)
+        self.opt_no_holes = tk.BooleanVar(value=False)
 
-        self.var_header_url = tk.StringVar(value=self.user_cfg.get("header_url", GENERAL_DEFAULTS["header_url"]))
-        self.var_header_title = tk.StringVar(value=self.user_cfg.get("header_title", GENERAL_DEFAULTS["header_title"]))
+        self.out_dir = tk.StringVar(value=_profile_default(self.profile, "out_dir", "out"))
+        self.gen_dir = tk.StringVar(value=_profile_default(self.profile, "gen_dir", ".gen_barcodes"))
 
-        self.var_png_scale = tk.StringVar(value=str(self.user_cfg.get("png_scale", "5.0")))
-        self.var_png_scalexdimdp = tk.StringVar(value=str(self.user_cfg.get("png_scalexdimdp", "")))
+        self.png_scale = tk.StringVar(value="5.0")
+        self.png_scalexdimdp = tk.StringVar(value="")
+
+        self.last_output_path = None
 
         self._build_ui()
-        self._apply_report_rules()
 
-    def _build_ui(self) -> None:
-        pad = {"padx": 10, "pady": 6}
+    def _build_ui(self):
+        outer = ttk.Frame(self, padding=12)
+        outer.grid(row=0, column=0, sticky="nsew")
 
-        # Association picker
-        frm_assoc = ttk.LabelFrame(self, text="Association (optional)")
-        frm_assoc.grid(row=0, column=0, sticky="ew", **pad)
+        ttk.Label(outer, text="YMCA Card Maker (GUI)").grid(row=0, column=0, sticky="w")
 
-        assoc_names = ["(Custom / manual)"] + [a["name"] for a in self.associations]
-        self.var_assoc = tk.StringVar(value=assoc_names[0])
-        cmb = ttk.Combobox(frm_assoc, textvariable=self.var_assoc, values=assoc_names, state="readonly", width=52)
-        cmb.grid(row=0, column=0, sticky="w", padx=8, pady=6)
-        cmb.bind("<<ComboboxSelected>>", lambda _e: self._on_assoc_selected())
+        self.container = ttk.Frame(outer)
+        self.container.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
 
-        btn_reset = ttk.Button(frm_assoc, text="Reset to general defaults", command=self._reset_to_general_defaults)
-        btn_reset.grid(row=0, column=1, padx=8, pady=6, sticky="e")
+        self.page1 = ttk.Frame(self.container)
+        self.page2 = ttk.Frame(self.container)
 
-        # Header fields
-        frm_header = ttk.LabelFrame(self, text="Header")
-        frm_header.grid(row=1, column=0, sticky="ew", **pad)
+        for p in (self.page1, self.page2):
+            p.grid(row=0, column=0, sticky="nsew")
 
-        ttk.Label(frm_header, text="URL").grid(row=0, column=0, sticky="w", padx=8, pady=4)
-        ttk.Entry(frm_header, textvariable=self.var_header_url, width=40).grid(row=0, column=1, sticky="w", padx=8, pady=4)
+        self._build_page1()
+        self._build_page2()
 
-        ttk.Label(frm_header, text="Title").grid(row=1, column=0, sticky="w", padx=8, pady=4)
-        ttk.Entry(frm_header, textvariable=self.var_header_title, width=40).grid(row=1, column=1, sticky="w", padx=8, pady=4)
+        self.show_page(1)
 
-        # Data + report
-        frm_main = ttk.LabelFrame(self, text="Report")
-        frm_main.grid(row=2, column=0, sticky="ew", **pad)
-
-        ttk.Label(frm_main, text="Barcode data").grid(row=0, column=0, sticky="w", padx=8, pady=4)
-        ttk.Entry(frm_main, textvariable=self.var_data, width=40).grid(row=0, column=1, sticky="w", padx=8, pady=4)
-
-        ttk.Label(frm_main, text="Report type").grid(row=1, column=0, sticky="w", padx=8, pady=4)
-        cmb_report = ttk.Combobox(frm_main, textvariable=self.var_report, values=[r[0] for r in REPORTS], state="readonly", width=38)
-        cmb_report.grid(row=1, column=1, sticky="w", padx=8, pady=4)
-        cmb_report.bind("<<ComboboxSelected>>", lambda _e: self._apply_report_rules())
-
-        # Options
-        frm_opt = ttk.LabelFrame(self, text="Options")
-        frm_opt.grid(row=3, column=0, sticky="ew", **pad)
-
-        self.chk_checksum = ttk.Checkbutton(frm_opt, text="Checksum (Mod43)", variable=self.var_checksum)
-        self.chk_checksum.grid(row=0, column=0, sticky="w", padx=8, pady=2)
-
-        self.chk_text = ttk.Checkbutton(frm_opt, text="Include barcode text (barcode-only)", variable=self.var_text)
-        self.chk_text.grid(row=0, column=1, sticky="w", padx=8, pady=2)
-
-        ttk.Checkbutton(frm_opt, text="Prefix '+'", variable=self.var_plus).grid(row=1, column=0, sticky="w", padx=8, pady=2)
-        ttk.Checkbutton(frm_opt, text="Timestamp outputs", variable=self.var_timestamp).grid(row=1, column=1, sticky="w", padx=8, pady=2)
-        ttk.Checkbutton(frm_opt, text="No holes (YMCA cards)", variable=self.var_no_holes).grid(row=2, column=0, sticky="w", padx=8, pady=2)
-
-        # PNG extras
-        frm_png = ttk.LabelFrame(self, text="PNG options (barcode_png)")
-        frm_png.grid(row=4, column=0, sticky="ew", **pad)
-        ttk.Label(frm_png, text="scale").grid(row=0, column=0, sticky="w", padx=8, pady=4)
-        ttk.Entry(frm_png, textvariable=self.var_png_scale, width=10).grid(row=0, column=1, sticky="w", padx=8, pady=4)
-        ttk.Label(frm_png, text="scalexdimdp").grid(row=0, column=2, sticky="w", padx=8, pady=4)
-        ttk.Entry(frm_png, textvariable=self.var_png_scalexdimdp, width=18).grid(row=0, column=3, sticky="w", padx=8, pady=4)
-
-        # Paths
-        frm_paths = ttk.LabelFrame(self, text="Paths (optional overrides)")
-        frm_paths.grid(row=5, column=0, sticky="ew", **pad)
-
-        self._path_row(frm_paths, 0, "zint.exe", "zint_exe")
-        self._path_row(frm_paths, 1, "OCR-B.ttf", "ocrb_ttf")
-        self._path_row(frm_paths, 2, "Output dir", "out_dir", is_dir=True)
-        self._path_row(frm_paths, 3, "Barcode cache dir", "gen_dir", is_dir=True)
-
-        # Buttons
-        frm_btn = ttk.Frame(self)
-        frm_btn.grid(row=6, column=0, sticky="ew", padx=10, pady=10)
-
-        ttk.Button(frm_btn, text="Save config", command=self._save_config).grid(row=0, column=0, padx=6)
-        ttk.Button(frm_btn, text="Run", command=self._run).grid(row=0, column=1, padx=6)
-        ttk.Button(frm_btn, text="Open output folder", command=self._open_output).grid(row=0, column=2, padx=6)
-
-    def _path_row(self, parent, row: int, label: str, key: str, is_dir: bool = False) -> None:
-        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=8, pady=4)
-        var = tk.StringVar(value=getattr(self.paths, key))
-        setattr(self, f"var_{key}", var)
-        ttk.Entry(parent, textvariable=var, width=46).grid(row=row, column=1, sticky="w", padx=8, pady=4)
-
-        def browse():
-            if is_dir:
-                p = filedialog.askdirectory()
-            else:
-                p = filedialog.askopenfilename()
-            if p:
-                var.set(p)
-
-        ttk.Button(parent, text="Browse", command=browse).grid(row=row, column=2, padx=6, pady=4)
-
-    def _reset_to_general_defaults(self) -> None:
-        self.var_header_url.set(GENERAL_DEFAULTS["header_url"])
-        self.var_header_title.set(GENERAL_DEFAULTS["header_title"])
-        self.var_data.set(GENERAL_DEFAULTS["default_data"])
-        self.var_assoc.set("(Custom / manual)")
-
-    def _on_assoc_selected(self) -> None:
-        name = self.var_assoc.get()
-        if name == "(Custom / manual)":
-            return
-        for a in self.associations:
-            if a["name"] == name:
-                self.var_header_url.set(a.get("url", GENERAL_DEFAULTS["header_url"]))
-                self.var_header_title.set(a.get("title", GENERAL_DEFAULTS["header_title"]))
-                break
-
-    def _apply_report_rules(self) -> None:
-        rpt = self.var_report.get()
-
-        # checksum checkbox is irrelevant for mixed
-        if rpt == "ymca_letter_6up_mixed":
-            self.chk_checksum.state(["disabled"])
+    def show_page(self, n: int):
+        if n == 1:
+            self.page1.tkraise()
         else:
-            self.chk_checksum.state(["!disabled"])
+            self.page2.tkraise()
+            self._refresh_page2_visibility()
 
-        # include_text only applies to barcode_* outputs
-        if rpt in ("barcode_svg", "barcode_png"):
-            self.chk_text.state(["!disabled"])
-        else:
-            self.chk_text.state(["disabled"])
+    def _build_page1(self):
+        f = self.page1
 
-    def _save_config(self) -> None:
-        cfg = read_json(USER_CFG)
+        ttk.Label(f, text="Step 1: Enter code + choose report").grid(row=0, column=0, columnspan=3, sticky="w")
 
-        # paths
-        cfg["zint_exe"] = self.var_zint_exe.get().strip()
-        cfg["ocrb_ttf"] = self.var_ocrb_ttf.get().strip()
-        cfg["out_dir"] = self.var_out_dir.get().strip()
-        cfg["gen_dir"] = self.var_gen_dir.get().strip()
+        ttk.Label(f, text="Raw code:").grid(row=1, column=0, sticky="w", pady=(10, 2))
+        entry = ttk.Entry(f, textvariable=self.raw_code, width=34)
+        entry.grid(row=2, column=0, columnspan=3, sticky="we")
+        entry.focus_set()
 
-        # defaults
-        cfg["header_url"] = self.var_header_url.get().strip()
-        cfg["header_title"] = self.var_header_title.get().strip()
-        cfg["default_data"] = self.var_data.get().strip()
+        ttk.Label(f, text="Report:").grid(row=3, column=0, sticky="w", pady=(10, 2))
+        report_box = ttk.Combobox(
+            f,
+            textvariable=self.report,
+            values=[r[0] for r in REPORTS],
+            state="readonly",
+            width=32,
+        )
+        report_box.grid(row=4, column=0, columnspan=3, sticky="we")
 
-        # png defaults
-        cfg["png_scale"] = self.var_png_scale.get().strip()
-        cfg["png_scalexdimdp"] = self.var_png_scalexdimdp.get().strip()
+        ttk.Label(f, text="CLI script (must be in this folder):").grid(row=5, column=0, sticky="w", pady=(10, 2))
+        ttk.Entry(f, textvariable=self.cli_path, width=34).grid(row=6, column=0, columnspan=3, sticky="we")
 
-        write_json_no_bom(USER_CFG, cfg)
-        messagebox.showinfo("Saved", f"Saved {USER_CFG.name}")
+        btns = ttk.Frame(f)
+        btns.grid(row=7, column=0, columnspan=3, sticky="we", pady=(12, 0))
+        ttk.Button(btns, text="Next", command=self._on_next).grid(row=0, column=2, sticky="e")
 
-    def _run(self) -> None:
-        rpt = self.var_report.get().strip()
-        data = self.var_data.get().strip()
-        if not rpt:
-            messagebox.showerror("Missing report", "Choose a report.")
+    def _build_page2(self):
+        f = self.page2
+
+        ttk.Label(f, text="Step 2: Options (changes based on report)").grid(row=0, column=0, columnspan=3, sticky="w")
+
+        self.summary = ttk.Label(f, text="")
+        self.summary.grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 8))
+
+        self.chk_plus = ttk.Checkbutton(f, text="Prefix with '+' (encode +DATA)", variable=self.opt_plus)
+        self.chk_plus.grid(row=2, column=0, columnspan=3, sticky="w")
+
+        self.chk_timestamp = ttk.Checkbutton(f, text="Timestamped output (avoid overwrite/file lock)", variable=self.opt_timestamp)
+        self.chk_timestamp.grid(row=3, column=0, columnspan=3, sticky="w")
+
+        self.chk_checksum = ttk.Checkbutton(f, text="Checksum (Mod43 appended)", variable=self.opt_checksum)
+        self.chk_checksum.grid(row=4, column=0, columnspan=3, sticky="w")
+
+        self.chk_text = ttk.Checkbutton(f, text="Include text in barcode image (Zint text)", variable=self.opt_text)
+        self.chk_text.grid(row=5, column=0, columnspan=3, sticky="w")
+
+        self.chk_no_holes = ttk.Checkbutton(f, text="Disable holes (YMCA PDFs)", variable=self.opt_no_holes)
+        self.chk_no_holes.grid(row=6, column=0, columnspan=3, sticky="w")
+
+        ttk.Label(f, text="Output folder:").grid(row=7, column=0, sticky="w", pady=(10, 2))
+        ttk.Entry(f, textvariable=self.out_dir, width=18).grid(row=8, column=0, sticky="w")
+
+        ttk.Label(f, text="Barcode cache folder:").grid(row=7, column=1, sticky="w", pady=(10, 2), padx=(12, 0))
+        ttk.Entry(f, textvariable=self.gen_dir, width=18).grid(row=8, column=1, sticky="w", padx=(12, 0))
+
+        self.png_frame = ttk.LabelFrame(f, text="PNG options (barcode_png only)")
+        self.png_frame.grid(row=9, column=0, columnspan=3, sticky="we", pady=(10, 0))
+
+        ttk.Label(self.png_frame, text="--png-scale:").grid(row=0, column=0, sticky="w", padx=8, pady=6)
+        ttk.Entry(self.png_frame, textvariable=self.png_scale, width=8).grid(row=0, column=1, sticky="w", pady=6)
+
+        ttk.Label(self.png_frame, text="--png-scalexdimdp (optional):").grid(row=1, column=0, sticky="w", padx=8, pady=(0, 8))
+        ttk.Entry(self.png_frame, textvariable=self.png_scalexdimdp, width=30).grid(row=1, column=1, sticky="w", pady=(0, 8))
+
+        self.run_btn = ttk.Button(f, text="Generate", command=self._on_generate)
+        self.run_btn.grid(row=10, column=0, sticky="w", pady=(12, 0))
+
+        self.back_btn = ttk.Button(f, text="Back", command=lambda: self.show_page(1))
+        self.back_btn.grid(row=10, column=1, sticky="w", pady=(12, 0), padx=(12, 0))
+
+        self.open_file_btn = ttk.Button(f, text="Open output file", command=self._open_last_file, state="disabled")
+        self.open_file_btn.grid(row=11, column=0, sticky="w", pady=(8, 0))
+
+        self.open_folder_btn = ttk.Button(f, text="Open output folder", command=self._open_out_dir)
+        self.open_folder_btn.grid(row=11, column=1, sticky="w", pady=(8, 0), padx=(12, 0))
+
+        self.output_text = tk.Text(f, width=64, height=10, wrap="word")
+        self.output_text.grid(row=12, column=0, columnspan=3, sticky="we", pady=(10, 0))
+        self.output_text.configure(state="disabled")
+
+    def _on_next(self):
+        raw = self.raw_code.get().strip()
+        if not raw:
+            messagebox.showerror("Missing code", "Enter the raw code first.")
             return
 
-        cmd = [sys.executable, str(CLI_PATH), "-r", rpt]
-        if data:
-            cmd += ["-d", data]
+        cli = Path(self.cli_path.get().strip())
+        if not cli.exists():
+            messagebox.showerror("Missing CLI script", f"Cannot find {cli}. Put the GUI next to your CLI script, or set the correct name.")
+            return
 
-        # header fields
-        if self.var_header_url.get().strip():
-            cmd += ["--header-url", self.var_header_url.get().strip()]
-        if self.var_header_title.get().strip():
-            cmd += ["--header-title", self.var_header_title.get().strip()]
+        self.show_page(2)
 
-        # options
-        if self.var_checksum.get() and rpt != "ymca_letter_6up_mixed":
-            cmd += ["--checksum"]
-        if self.var_text.get() and rpt in ("barcode_svg", "barcode_png"):
-            cmd += ["--text"]
-        if self.var_plus.get():
-            cmd += ["--plus"]
-        if self.var_timestamp.get():
-            cmd += ["--timestamp"]
-        if self.var_no_holes.get():
-            cmd += ["--no-holes"]
+    def _refresh_page2_visibility(self):
+        r = self.report.get()
+        raw = self.raw_code.get().strip()
+        label = dict(REPORTS).get(r, r)
+        self.summary.configure(text=f"Raw code: {raw}   |   Report: {r} ({label})")
 
-        # png options
-        if rpt == "barcode_png":
-            cmd += ["--png-scale", self.var_png_scale.get().strip()]
-            if self.var_png_scalexdimdp.get().strip():
-                cmd += ["--png-scalexdimdp", self.var_png_scalexdimdp.get().strip()]
+        is_barcode = r in BARCODE_ONLY_REPORTS
+        is_png = (r == "barcode_png")
+        is_mixed = (r == "ymca_letter_6up_mixed")
+        is_ymca_pdf = r in YMCA_PDF_REPORTS
 
-        # paths
-        if self.var_zint_exe.get().strip():
-            cmd += ["--zint-exe", self.var_zint_exe.get().strip()]
-        if self.var_ocrb_ttf.get().strip():
-            cmd += ["--ocrb-ttf", self.var_ocrb_ttf.get().strip()]
-        if self.var_out_dir.get().strip():
-            cmd += ["--out-dir", self.var_out_dir.get().strip()]
-        if self.var_gen_dir.get().strip():
-            cmd += ["--gen-dir", self.var_gen_dir.get().strip()]
+        # Mixed report ignores checksum flag
+        self.chk_checksum.configure(state=("disabled" if is_mixed else "normal"))
+        if is_mixed:
+            self.opt_checksum.set(False)
+
+        # Text only for barcode-only reports
+        self.chk_text.configure(state=("normal" if is_barcode else "disabled"))
+        if not is_barcode:
+            self.opt_text.set(False)
+
+        # Holes only for YMCA PDFs
+        self.chk_no_holes.configure(state=("normal" if is_ymca_pdf else "disabled"))
+        if not is_ymca_pdf:
+            self.opt_no_holes.set(False)
+
+        # PNG frame only for barcode_png
+        if is_png:
+            for child in self.png_frame.winfo_children():
+                child.configure(state="normal")
+        else:
+            for child in self.png_frame.winfo_children():
+                child.configure(state="disabled")
+
+    def _append_output(self, s: str):
+        self.output_text.configure(state="normal")
+        self.output_text.insert("end", s)
+        self.output_text.see("end")
+        self.output_text.configure(state="disabled")
+
+    def _build_command(self):
+        python = sys.executable
+        cli = self.cli_path.get().strip()
+        raw = self.raw_code.get().strip()
+        report = self.report.get().strip()
+
+        cmd = [python, cli, "-d", raw, "-r", report]
+
+        if self.opt_plus.get():
+            cmd.append("--plus")
+        if self.opt_timestamp.get():
+            cmd.append("--timestamp")
+
+        out_dir = self.out_dir.get().strip() or "out"
+        gen_dir = self.gen_dir.get().strip() or ".gen_barcodes"
+        cmd += ["--out-dir", out_dir, "--gen-dir", gen_dir]
+
+        if report != "ymca_letter_6up_mixed" and self.opt_checksum.get():
+            cmd.append("--checksum")
+
+        if report in BARCODE_ONLY_REPORTS and self.opt_text.get():
+            cmd.append("--text")
+
+        if report in YMCA_PDF_REPORTS and self.opt_no_holes.get():
+            cmd.append("--no-holes")
+
+        if report == "barcode_png":
+            scale = self.png_scale.get().strip()
+            if scale:
+                cmd += ["--png-scale", scale]
+            xdimdp = self.png_scalexdimdp.get().strip()
+            if xdimdp:
+                cmd += ["--png-scalexdimdp", xdimdp]
+
+        return cmd
+
+    def _on_generate(self):
+        self._refresh_page2_visibility()
+
+        cmd = self._build_command()
+
+        self.output_text.configure(state="normal")
+        self.output_text.delete("1.0", "end")
+        self.output_text.configure(state="disabled")
+        self._append_output("Running:\n" + " ".join(cmd) + "\n\n")
+
+        self.last_output_path = None
+        self.open_file_btn.configure(state="disabled")
 
         try:
-            if getattr(sys, 'frozen', False):
-                import ymca_card_maker as _cli
-                buf = io.StringIO()
-                with contextlib.redirect_stdout(buf):
-                    rc = _cli.main(cmd[2:])
-                class _P:
-                    returncode = rc
-                    stdout = buf.getvalue()
-                    stderr = ""
-                proc = _P()
-            else:
-                proc = subprocess.run(cmd, capture_output=True, text=True)
+            proc = subprocess.run(cmd, capture_output=True, text=True)
         except Exception as e:
             messagebox.showerror("Run failed", str(e))
             return
 
+        out = (proc.stdout or "") + (proc.stderr or "")
+        self._append_output(out if out else "(no output)\n")
+
         if proc.returncode != 0:
-            messagebox.showerror("Error", (proc.stdout + "\n" + proc.stderr).strip())
+            messagebox.showerror("Error", "The CLI returned an error. See output box for details.")
             return
 
-        out = (proc.stdout or "").strip()
-        messagebox.showinfo("Done", out if out else "Done")
+        # Try to find "Created: <path>"
+        created_path = None
+        for line in out.splitlines():
+            if line.strip().startswith("Created:"):
+                maybe = line.split("Created:", 1)[1].strip()
+                if maybe:
+                    created_path = maybe
 
-    def _open_output(self) -> None:
-        # Use configured out_dir if set, else default ./out
-        out_dir = self.var_out_dir.get().strip() or "out"
-        p = (REPO_ROOT / out_dir).resolve() if not Path(out_dir).is_absolute() else Path(out_dir)
+        if created_path:
+            p = Path(created_path)
+            self.last_output_path = p
+            self.open_file_btn.configure(state="normal")
+
+    def _open_last_file(self):
+        if self.last_output_path:
+            open_path(self.last_output_path)
+
+    def _open_out_dir(self):
+        p = Path(self.out_dir.get().strip() or "out")
         p.mkdir(parents=True, exist_ok=True)
-
-        if sys.platform.startswith("win"):
-            subprocess.run(["explorer", str(p)])
-        elif sys.platform == "darwin":
-            subprocess.run(["open", str(p)])
-        else:
-            subprocess.run(["xdg-open", str(p)])
-
-
-def main() -> int:
-    if not getattr(sys, 'frozen', False) and not CLI_PATH.exists():
-        print(f"Missing CLI at {CLI_PATH}")
-        return 2
-    App().mainloop()
-    return 0
+        open_path(p)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    app = App()
+    app.mainloop()
