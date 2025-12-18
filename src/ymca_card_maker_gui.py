@@ -15,6 +15,8 @@ The GUI writes .user_config.json (UTF-8 no BOM) so the CLI can pick it up.
 from __future__ import annotations
 
 import json
+import io
+import contextlib
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -24,9 +26,14 @@ from tkinter import ttk, messagebox, filedialog
 
 APP_VERSION = "1.5"
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+def _detect_app_root() -> Path:
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return Path(sys._MEIPASS).resolve()
+    return Path(__file__).resolve().parent.parent
+
+REPO_ROOT = _detect_app_root()
 CLI_PATH = REPO_ROOT / "src" / "ymca_card_maker.py"
-USER_CFG = REPO_ROOT / ".user_config.json"
+USER_CFG = (Path(sys.executable).resolve().parent / ".user_config.json") if getattr(sys, 'frozen', False) else (REPO_ROOT / ".user_config.json")
 PROFILE_DB = REPO_ROOT / "profiles" / "associations.json"
 
 GENERAL_DEFAULTS = {
@@ -300,7 +307,18 @@ class App(tk.Tk):
             cmd += ["--gen-dir", self.var_gen_dir.get().strip()]
 
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True)
+            if getattr(sys, 'frozen', False):
+                import ymca_card_maker as _cli
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    rc = _cli.main(cmd[2:])
+                class _P:
+                    returncode = rc
+                    stdout = buf.getvalue()
+                    stderr = ""
+                proc = _P()
+            else:
+                proc = subprocess.run(cmd, capture_output=True, text=True)
         except Exception as e:
             messagebox.showerror("Run failed", str(e))
             return
@@ -327,7 +345,7 @@ class App(tk.Tk):
 
 
 def main() -> int:
-    if not CLI_PATH.exists():
+    if not getattr(sys, 'frozen', False) and not CLI_PATH.exists():
         print(f"Missing CLI at {CLI_PATH}")
         return 2
     App().mainloop()

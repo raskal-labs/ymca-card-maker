@@ -30,6 +30,7 @@ import argparse
 import json
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
@@ -46,10 +47,19 @@ from reportlab.graphics import renderPDF
 
 VERSION = "1.5"
 
-BASE_DIR = Path(__file__).resolve().parent.parent  # repo root (src/..)
+def _detect_base_dir() -> Path:
+    # In PyInstaller onefile, __file__ lives under a temp dir. Use _MEIPASS when present.
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return Path(sys._MEIPASS).resolve()
+    return Path(__file__).resolve().parent.parent  # repo root (src/..)
+
+BASE_DIR = _detect_base_dir()
+# When frozen, prefer writing user files next to the EXE.
+APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else BASE_DIR
+
 
 PROFILE_DEFAULT = BASE_DIR / "profiles" / "ymca.json"
-USER_CONFIG_DEFAULT = BASE_DIR / ".user_config.json"
+USER_CONFIG_DEFAULT = APP_DIR / ".user_config.json"
 
 PAGE_SIZE_LETTER = letter
 
@@ -187,9 +197,9 @@ def merge_paths(cli_args: argparse.Namespace) -> Paths:
     out_dir = Path(pick("out_dir", "out"))
     gen_dir = Path(pick("gen_dir", ".gen_barcodes"))
     if not out_dir.is_absolute():
-        out_dir = (BASE_DIR / out_dir).resolve()
+        out_dir = (APP_DIR / out_dir).resolve()
     if not gen_dir.is_absolute():
-        gen_dir = (BASE_DIR / gen_dir).resolve()
+        gen_dir = (APP_DIR / gen_dir).resolve()
 
     return Paths(zint_exe=zint, ocrb_ttf=font, out_dir=out_dir, gen_dir=gen_dir)
 
@@ -460,7 +470,7 @@ def report_ymca_letter_6up_mixed(paths: Paths, raw: str, plus: bool, holes: bool
     return out
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("-d", "--data", default="", help="Raw code, e.g. YXXXX0123456 (defaults can come from config)")
     p.add_argument("-r", "--report", required=True, help="Report name")
@@ -485,11 +495,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--png-scale", dest="png_scale", default="5.0", help="Zint --scale for PNG output")
     p.add_argument("--png-scalexdimdp", dest="png_scalexdimdp", default="", help="Zint --scalexdimdp for PNG output")
 
-    return p.parse_args()
+    return p.parse_args(argv)
 
 
-def main() -> int:
-    args = parse_args()
+def main(argv: Optional[list[str]] = None) -> int:
+    args = parse_args(argv)
     paths = merge_paths(args)
     header_url, header_title, default_data = merge_header_defaults(args)
 
