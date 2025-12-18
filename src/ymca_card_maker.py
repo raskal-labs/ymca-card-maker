@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 YMCA Card Maker CLI v1.5
 
@@ -47,19 +47,30 @@ from reportlab.graphics import renderPDF
 
 VERSION = "1.5"
 
-def _detect_base_dir() -> Path:
-    # In PyInstaller onefile, __file__ lives under a temp dir. Use _MEIPASS when present.
-    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        return Path(sys._MEIPASS).resolve()
+def get_app_dir() -> Path:
+    """Directory where the app should read/write *user* files."""
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent  # repo root (src/..)
 
-BASE_DIR = _detect_base_dir()
-# When frozen, prefer writing user files next to the EXE.
-APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else BASE_DIR
+def get_resource_dir() -> Path:
+    """Directory where bundled resources live (PyInstaller uses sys._MEIPASS)."""
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return Path(getattr(sys, '_MEIPASS')).resolve()
+    return get_app_dir()
 
+APP_DIR = get_app_dir()
+RES_DIR = get_resource_dir()
 
-PROFILE_DEFAULT = BASE_DIR / "profiles" / "ymca.json"
-USER_CONFIG_DEFAULT = APP_DIR / ".user_config.json"
+# Prefer an external profiles/ folder next to the exe for "portable" builds,
+# but fall back to bundled resources when running onefile.
+PROFILE_DEFAULT = (APP_DIR / 'profiles' / 'ymca.json')
+if not PROFILE_DEFAULT.exists():
+    PROFILE_DEFAULT = (RES_DIR / 'profiles' / 'ymca.json')
+
+# User config should live next to the exe (portable) or repo root (dev).
+USER_CONFIG_DEFAULT = (APP_DIR / '.user_config.json')
+
 
 PAGE_SIZE_LETTER = letter
 
@@ -179,18 +190,18 @@ def merge_paths(cli_args: argparse.Namespace) -> Paths:
     zint_str = pick("zint_exe", "")
     zint = Path(zint_str) if zint_str else None
     if zint and not zint.is_absolute():
-        zint = (BASE_DIR / zint).resolve()
+        zint = (APP_DIR / zint).resolve() if (APP_DIR / zint).exists() else (RES_DIR / zint).resolve()
     if not zint or not zint.exists():
-        zint = detect_zint_exe(BASE_DIR)
+        zint = detect_zint_exe(APP_DIR) or detect_zint_exe(RES_DIR)
     if not zint or not zint.exists():
         raise FileNotFoundError("Cannot find zint.exe. Set --zint-exe or put Zint under ./zint-2.12.0/zint.exe")
 
     font_str = pick("ocrb_ttf", "")
     font = Path(font_str) if font_str else None
     if font and not font.is_absolute():
-        font = (BASE_DIR / font).resolve()
+        font = (APP_DIR / font).resolve() if (APP_DIR / font).exists() else (RES_DIR / font).resolve()
     if not font or not font.exists():
-        font = detect_ocrb_font(BASE_DIR)
+        font = detect_ocrb_font(APP_DIR) or detect_ocrb_font(RES_DIR)
     if not font or not font.exists():
         raise FileNotFoundError("Cannot find OCR-B font. Put OCR-B.ttf in assets/fonts/ or set --ocrb-ttf")
 
@@ -470,7 +481,7 @@ def report_ymca_letter_6up_mixed(paths: Paths, raw: str, plus: bool, holes: bool
     return out
 
 
-def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("-d", "--data", default="", help="Raw code, e.g. YXXXX0123456 (defaults can come from config)")
     p.add_argument("-r", "--report", required=True, help="Report name")
@@ -495,11 +506,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--png-scale", dest="png_scale", default="5.0", help="Zint --scale for PNG output")
     p.add_argument("--png-scalexdimdp", dest="png_scalexdimdp", default="", help="Zint --scalexdimdp for PNG output")
 
-    return p.parse_args(argv)
+    return p.parse_args()
 
 
-def main(argv: Optional[list[str]] = None) -> int:
-    args = parse_args(argv)
+def main() -> int:
+    args = parse_args()
     paths = merge_paths(args)
     header_url, header_title, default_data = merge_header_defaults(args)
 
