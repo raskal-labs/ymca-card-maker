@@ -52,3 +52,8 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local mirror repos / history rewrite scratch
+ymca-card-maker.mirror*/
+replacements.txt
+*.bak
