@@ -71,6 +71,10 @@ assets/fonts/OCR-B.ttf
 
 (Font files are intentionally gitignored.)
 
+### Linux/Proxmox quick start
+
+For Debian/Proxmox-style hosts, see [docs/cli-setup-debian.md](docs/cli-setup-debian.md) for package installs, font placement, and a smoke-test command.
+
 ---
 
 ## CLI Usage
