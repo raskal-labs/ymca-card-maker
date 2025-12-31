@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import re
 import shutil
 import subprocess
@@ -147,6 +149,12 @@ def load_json_if_exists(p: Path) -> dict:
 
 
 def detect_zint_exe(repo_root: Path) -> Optional[Path]:
+    zint_on_path = shutil.which("zint")
+    if zint_on_path:
+        p = Path(zint_on_path)
+        if p.exists():
+            return p
+
     candidates = [
         repo_root / "vendor" / "zint" / "zint-2.12.0" / "zint.exe",
         repo_root / "zint-2.12.0" / "zint.exe",
