@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import re
 import subprocess
 import sys
@@ -146,6 +148,12 @@ def load_json_if_exists(p: Path) -> dict:
 
 
 def detect_zint_exe(repo_root: Path) -> Optional[Path]:
+    zint_on_path = shutil.which("zint")
+    if zint_on_path:
+        p = Path(zint_on_path)
+        if p.exists():
+            return p
+
     candidates = [
         repo_root / "vendor" / "zint" / "zint-2.12.0" / "zint.exe",
         repo_root / "zint-2.12.0" / "zint.exe",
@@ -156,6 +164,9 @@ def detect_zint_exe(repo_root: Path) -> Optional[Path]:
             return c
     for c in repo_root.rglob("zint.exe"):
         return c
+    for c in repo_root.rglob("zint"):
+        if c.is_file() and os.access(c, os.X_OK):
+            return c
     return None
 
 
@@ -194,7 +205,7 @@ def merge_paths(cli_args: argparse.Namespace) -> Paths:
     if not zint or not zint.exists():
         zint = detect_zint_exe(APP_DIR) or detect_zint_exe(RES_DIR)
     if not zint or not zint.exists():
-        raise FileNotFoundError("Cannot find zint.exe. Set --zint-exe or put Zint under ./zint-2.12.0/zint.exe")
+        raise FileNotFoundError("Cannot find Zint (zint or zint.exe). Set --zint-exe, ensure zint is on PATH (Linux), or place it under ./zint-2.12.0/zint.exe")
 
     font_str = pick("ocrb_ttf", "")
     font = Path(font_str) if font_str else None
