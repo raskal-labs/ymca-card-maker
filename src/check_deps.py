@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -40,10 +41,18 @@ def find_zint(repo_root: Path) -> Path | None:
         repo_root / "zint-2.12.0" / "zint-2.12.0" / "zint.exe",
         repo_root / "zint-2.12.0-win32" / "zint-2.12.0" / "zint.exe",
         repo_root / "_deps" / "zint" / "zint.exe",
+        repo_root / "zint-2.12.0" / "zint",
+        repo_root / "zint",
     ]
     for c in candidates:
         if c.exists():
             return c
+    for c in repo_root.rglob("zint*"):
+        if c.name.lower() in {"zint", "zint.exe"}:
+            return c
+    from_path = shutil.which("zint")
+    if from_path:
+        return Path(from_path)
     for c in repo_root.rglob("zint.exe"):
         parts = {p.lower() for p in c.parts}
         if "build" in parts or "dist" in parts:
@@ -99,9 +108,9 @@ def main() -> int:
 
     zint = Path(args.zint).resolve() if args.zint else (find_zint(repo) or Path())
     if not zint or not zint.exists():
-        err("zint.exe not found. Put it under ./zint-2.12.0/zint.exe or pass --zint <path>")
+        err("Zint binary not found. Put it under ./zint-2.12.0/zint(.exe), ensure it is on PATH, or pass --zint <path>")
         return 5
-    ok(f"zint.exe found: {zint}")
+    ok(f"zint binary found: {zint}")
 
     try:
         proc = subprocess.run([str(zint), "--version"], capture_output=True, text=True, check=False)
@@ -121,7 +130,7 @@ def main() -> int:
 
     print("\nNext steps:")
     print("  - If reportlab/svglib missing: py -m pip install reportlab svglib")
-    print("  - If zint missing: put zint.exe at ./zint-2.12.0/zint.exe (as you planned)")
+    print("  - If zint missing: install it via your package manager or place zint(.exe) at ./zint-2.12.0/zint")
     print("  - If OCR-B missing: copy OCR-B.ttf to ./assets/fonts/OCR-B.ttf")
     return 0
 
