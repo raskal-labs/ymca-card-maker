@@ -42,6 +42,7 @@ REPORTS = [
     ("ymca_cr80_1up", "YMCA CR80 1-up (card-sized page)"),
     ("ymca_letter_6up", "YMCA Letter 6-up"),
     ("ymca_letter_6up_mixed", "YMCA Letter 6-up Mixed (col A plain, col B checksum)"),
+    ("avery5164_6up", "Avery 5164 / 8164 6-up (anchored top-left per label)"),
 ]
 
 
