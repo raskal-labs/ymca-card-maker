@@ -24,21 +24,6 @@ The tool supports both **CLI** and **GUI** usage and is safe to publish: all def
 - Association presets (optional)
 - Personal defaults stored locally and never committed
 
----
-
-## Defaults (Repo-Safe)
-
-These are the **generic defaults** used by the repository:
-
-- **Barcode data:** `YXXXX0123456`
-- **Header URL:** `ymca.org`
-- **Header title:** `YMCA`
-
-Your personal defaults (real codes, local URLs, paths) belong in:
-
-```
-.user_config.json   (gitignored)
-```
 
 ---
 
