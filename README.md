@@ -119,6 +119,16 @@ py src/ymca_card_maker.py \
   --timestamp
 ```
 
+### CLI on Debian/Proxmox
+
+For Debian or Proxmox LXC hosts, use the non-interactive wrapper and follow the Debian notes in [docs/cli-setup-debian.md](docs/cli-setup-debian.md):
+
+```bash
+./scripts/ymca-card-cli --profile profiles/sample.json --out ./output/test
+```
+
+The wrapper auto-detects `/etc` or `~/.config` configs, warns about container limitations, and writes artifacts under the requested output directory.
+
 ---
 
 ## GUI Usage (Windows)

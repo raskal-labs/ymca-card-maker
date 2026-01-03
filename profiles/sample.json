@@ -1,0 +1,15 @@
+{
+  "report": "ymca_letter_6up",
+  "data": "YXXXX0123456",
+  "checksum": true,
+  "paths": {
+    "out_dir": "output",
+    "gen_dir": ".gen_barcodes",
+    "zint_exe": "zint-2.12.0/zint.exe",
+    "ocrb_ttf": "assets/fonts/OCR-B.ttf"
+  },
+  "header_url": "ymca.org",
+  "header_title": "YMCA",
+  "default_data": "YXXXX0123456",
+  "timestamp": true
+}
