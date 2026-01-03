@@ -20,6 +20,7 @@ Reports:
 - ymca_cr80_1up
 - ymca_letter_6up
 - ymca_letter_6up_mixed (left column plain, right column checksum)
+- avery5164_6up (Avery 5164/8164 sheet, anchored to label top-left)
 
 Note: this CLI uses Zint to generate Code 39 barcodes (SVG/PNG).
 """
@@ -40,7 +41,7 @@ from typing import Optional, Tuple
 
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.units import mm
+from reportlab.lib.units import mm, inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
@@ -76,6 +77,15 @@ USER_CONFIG_DEFAULT = (APP_DIR / '.user_config.json')
 
 
 PAGE_SIZE_LETTER = letter
+
+# Avery 5164 (8164 equivalent) layout geometry, confirmed against Avery template U-0091-01.pdf
+AVERY_5164_LABEL_W = 4.0 * inch  # 101.6 mm
+AVERY_5164_LABEL_H = (10.0 / 3.0) * inch  # 3 1/3 in (84.666... mm)
+AVERY_5164_MARGIN_LEFT = 0.15625 * inch  # ~3.97 mm
+AVERY_5164_MARGIN_TOP = 0.5 * inch  # 12.7 mm
+AVERY_5164_MARGIN_BOTTOM = 0.5 * inch  # 12.7 mm
+AVERY_5164_HORIZONTAL_PITCH = 4.1875 * inch  # 4 in label + 3/16 in gutter
+AVERY_5164_VERTICAL_PITCH = AVERY_5164_LABEL_H  # stacked with no vertical gutter
 
 # --- Locked geometry (from your validated v0.9/v1.x) ---
 # Card size: CR80
@@ -380,6 +390,22 @@ def letter_layout_positions() -> Tuple[float, float, float, float]:
     return start_x, start_y_top, gap_x, gap_y
 
 
+def avery5164_layout_positions() -> Tuple[float, float, float, float]:
+    """
+    Returns (start_x, start_y_top, pitch_x, pitch_y) for Avery 5164/8164.
+
+    Geometry derived from the official Avery PDF template (U-0091-01.pdf):
+    - Label size: 4.0 in x 3.333... in (two columns, three rows)
+    - Margins: 0.15625 in left/right, 0.5 in top/bottom
+    - Horizontal pitch: 4.1875 in (4 in label + 3/16 in gutter)
+    - Vertical pitch: equal to label height (no vertical gutter)
+    """
+    page_w, page_h = PAGE_SIZE_LETTER
+    start_x = AVERY_5164_MARGIN_LEFT
+    start_y_top = page_h - AVERY_5164_MARGIN_TOP - CARD_H
+    return start_x, start_y_top, AVERY_5164_HORIZONTAL_PITCH, AVERY_5164_VERTICAL_PITCH
+
+
 def report_barcode_svg(paths: Paths, raw: str, checksum: bool, plus: bool, include_text: bool, timestamp: bool) -> Path:
     data, _bottom = build_data(raw, checksum=checksum, plus=plus)
     out = choose_output_path(paths.out_dir, f"{safe_filename(raw)}__barcode_svg_{'chk' if checksum else 'plain'}", "svg", timestamp)
@@ -455,6 +481,32 @@ def report_ymca_letter_6up(paths: Paths, raw: str, checksum: bool, plus: bool, h
         col = i % COLS
         x = start_x + col * (CARD_W + gap_x)
         y = start_y_top - row * (CARD_H + gap_y)
+        draw_ymca_card(c, x, y, svg, bottom, ocrb_font=ocrb, holes_enabled=holes, header_url=header_url, header_title=header_title)
+
+    c.showPage()
+    c.save()
+    print(f"Created: {out}")
+    return out
+
+
+def report_avery5164_6up(paths: Paths, raw: str, checksum: bool, plus: bool, holes: bool, header_url: str, header_title: str, timestamp: bool) -> Path:
+    data, bottom = build_data(raw, checksum=checksum, plus=plus)
+
+    ensure_dir(paths.gen_dir)
+    svg = paths.gen_dir / f"{safe_filename(data)}.svg"
+    if not svg.exists():
+        zint_make_svg(paths.zint_exe, data, svg, include_text=False)
+
+    out = choose_output_path(paths.out_dir, f"{safe_filename(raw)}__avery5164_6up_{'chk' if checksum else 'plain'}", "pdf", timestamp)
+    c = canvas.Canvas(str(out), pagesize=PAGE_SIZE_LETTER)
+    ocrb = register_ocrb(paths.ocrb_ttf)
+
+    start_x, start_y_top, pitch_x, pitch_y = avery5164_layout_positions()
+    for i in range(ROWS * COLS):
+        row = i // COLS
+        col = i % COLS
+        x = start_x + col * pitch_x
+        y = start_y_top - row * pitch_y
         draw_ymca_card(c, x, y, svg, bottom, ocrb_font=ocrb, holes_enabled=holes, header_url=header_url, header_title=header_title)
 
     c.showPage()
@@ -550,6 +602,8 @@ def main() -> int:
         report_ymca_letter_6up(paths, raw, checksum=checksum, plus=plus, holes=holes, header_url=header_url, header_title=header_title, timestamp=timestamp)
     elif report == "ymca_letter_6up_mixed":
         report_ymca_letter_6up_mixed(paths, raw, plus=plus, holes=holes, header_url=header_url, header_title=header_title, timestamp=timestamp)
+    elif report == "avery5164_6up":
+        report_avery5164_6up(paths, raw, checksum=checksum, plus=plus, holes=holes, header_url=header_url, header_title=header_title, timestamp=timestamp)
     else:
         raise SystemExit(f"Unknown report: {report}")
 

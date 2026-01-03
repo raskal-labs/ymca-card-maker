@@ -18,6 +18,7 @@ The tool supports both **CLI** and **GUI** usage and is safe to publish: all def
   - 1-up CR80 (credit-card sized)
   - 6-up Letter sheets
   - 6-up mixed (plain + checksum split by column)
+  - 6-up Avery 5164 / 8164 sheets (shipping labels)
 - Locked, print-validated geometry
 - Configurable header URL and title
 - CLI and Windows GUI
@@ -80,6 +81,7 @@ py src/ymca_card_maker.py -r <report> -d <data>
 | `ymca_cr80_1up` | CR80-sized page |
 | `ymca_letter_6up` | 6-up Letter sheet |
 | `ymca_letter_6up_mixed` | 3 plain + 3 checksum (split by column) |
+| `avery5164_6up` | 6-up on Avery 5164/8164 shipping labels (top-left anchored per label) |
 
 ### Common Flags
 
@@ -103,6 +105,18 @@ py src/ymca_card_maker.py \
   --header-title YMCA \
   --timestamp
 ```
+
+### Avery 5164 / 8164 example
+
+```bash
+py src/ymca_card_maker.py \
+  -d YXXXX0123456 \
+  -r avery5164_6up \
+  --checksum \
+  --timestamp
+```
+
+Cards are anchored to the **top-left of each shipping label** so the outline grows down and to the right inside the 4.0" x 3 1/3" label area. The layout mirrors the official Avery 5164 (and 8164) PDF template with 0.5" top/bottom margins, ~0.156" side margins, and a 0.1875" gutter between the two columns.
 
 ### CLI on Debian/Proxmox
 
