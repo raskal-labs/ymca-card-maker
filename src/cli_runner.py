@@ -29,6 +29,7 @@ from ymca_card_maker import (
     detect_zint_exe,
     report_barcode_png,
     report_barcode_svg,
+    report_avery5164_6up,
     report_ymca_cr80_1up,
     report_ymca_letter_1up,
     report_ymca_letter_6up,
@@ -178,6 +179,8 @@ def run_report(paths: Paths, report: str, raw: str, *, checksum: bool, plus: boo
         report_ymca_letter_6up(paths, raw, checksum=checksum, plus=plus, holes=holes, header_url=header_url, header_title=header_title, timestamp=timestamp)
     elif report == "ymca_letter_6up_mixed":
         report_ymca_letter_6up_mixed(paths, raw, plus=plus, holes=holes, header_url=header_url, header_title=header_title, timestamp=timestamp)
+    elif report == "avery5164_6up":
+        report_avery5164_6up(paths, raw, checksum=checksum, plus=plus, holes=holes, header_url=header_url, header_title=header_title, timestamp=timestamp)
     else:
         raise SystemExit(f"Unknown report: {report}")
 
