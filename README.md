@@ -130,6 +130,10 @@ The wrapper auto-detects `/etc` or `~/.config` configs, warns about container li
 
 ---
 
+## Browser GUI (Linux / macOS / Windows)
+
+Run `python3 src/web_gui.py` and open http://127.0.0.1:8765. See [browser GUI setup](docs/web-gui.md) for local and authenticated remote use.
+
 ## GUI Usage (Windows)
 
 Launch:

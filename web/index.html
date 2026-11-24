@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="__TOKEN__">
+<title>Card Maker · Print Studio</title>
+<style>
+:root{color-scheme:light dark;--bg:#f1f4f8;--panel:#fff;--ink:#172337;--sub:#627087;--border:#d9e1eb;--accent:#11677d;--accent-ink:white;--field:#fff}
+@media(prefers-color-scheme:dark){:root{--bg:#101820;--panel:#1b2631;--ink:#edf4fa;--sub:#a9b8c9;--border:#364553;--accent:#77cfe0;--accent-ink:#10232b;--field:#111b24}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}
+header{padding:24px 5vw;border-bottom:1px solid var(--border);background:var(--panel);display:flex;justify-content:space-between;align-items:center;gap:16px}
+h1,h2,p{margin:0}h1{font-size:24px;letter-spacing:-.6px}h2{font-size:18px}small,.muted{color:var(--sub)}.eyebrow{text-transform:uppercase;font-size:11px;font-weight:700;letter-spacing:1.6px;color:var(--sub)}
+main{max-width:1320px;margin:auto;padding:24px;display:grid;grid-template-columns:minmax(300px,390px) minmax(0,1fr);gap:20px;align-items:start}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:22px}
+.section{padding:18px 0;border-bottom:1px solid var(--border)}.section:last-child{border:0}
+label{display:block;font-weight:600;margin-top:12px}input:not([type=checkbox]),select{width:100%;min-height:44px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--field);color:var(--ink);font:inherit;margin-top:5px}
+input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+input[type=checkbox]{accent-color:var(--accent);width:18px;height:18px}.check{display:flex;align-items:center;gap:9px;font-weight:400}.check:has(input:disabled){opacity:.5}
+button,.download{border:1px solid var(--border);border-radius:9px;padding:12px 16px;font:inherit;font-weight:650;cursor:pointer;color:var(--ink);background:var(--panel);text-decoration:none;text-align:center}button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);flex:1}button:disabled{opacity:.5;cursor:wait}
+.actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}.preview-head{display:flex;justify-content:space-between;gap:16px;align-items:start;margin-bottom:18px}
+.preview{background:var(--bg);border:1px dashed var(--border);border-radius:12px;min-height:520px;display:grid;place-items:center;overflow:hidden}
+.preview p{text-align:center;padding:36px;color:var(--sub)}iframe{width:100%;height:670px;border:0}img{max-width:95%;max-height:650px;object-fit:contain;background:white}
+#status{margin-top:12px;min-height:24px;color:var(--sub);overflow-wrap:anywhere}#status.error{color:#b23b36}
+#output-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}[hidden]{display:none!important}
+@media(max-width:780px){main{grid-template-columns:1fr;padding:14px;gap:14px}header{padding:18px}header small{display:none}.panel{padding:18px}.preview{min-height:300px}iframe{height:480px}}
+</style>
+</head>
+<body>
+<header><div><div class="eyebrow">Print Studio</div><h1>Card Maker</h1></div><small>Local rendering · no saved membership data</small></header>
+<main>
+<section class="panel">
+<h2>Card settings</h2><p class="muted">Use an existing membership code you are authorized to use.</p>
+<form id="settings">
+<div class="section">
+<div class="eyebrow">01 / Membership</div>
+<label for="data">Membership code</label>
+<input id="data" name="data" type="password" maxlength="64" autocomplete="off" spellcheck="false" required placeholder="Enter existing code">
+<label class="check"><input id="reveal" type="checkbox"> Show code</label>
+<label for="association">Association</label>
+<select id="association"><option value="">Custom / general</option>__ASSOCIATIONS__</select>
+<label for="header_url">Header URL</label><input id="header_url" maxlength="64" value="ymca.org" required>
+<label for="header_title">Header title</label><input id="header_title" maxlength="64" value="YMCA" required>
+</div>
+<div class="section">
+<div class="eyebrow">02 / Layout</div>
+<label for="report">Output format</label><select id="report">__REPORTS__</select>
+<p id="layout-hint" class="muted"></p>
+<label class="check"><input type="checkbox" id="checksum"> Mod43 checksum</label>
+<label class="check"><input type="checkbox" id="plus"> Prefix plus sign</label>
+<label class="check"><input type="checkbox" id="no_holes"> Omit punch holes</label>
+<label class="check"><input type="checkbox" id="text"> Human-readable barcode text</label>
+</div>
+<div class="actions"><button class="primary" id="generate" type="submit">Generate preview</button><button id="clear" type="button">Clear</button></div>
+<p id="status" role="status" aria-live="polite"></p>
+</form>
+</section>
+<section class="panel" aria-label="Output preview">
+<div class="preview-head"><div><div class="eyebrow">03 / Output</div><h2>Print preview</h2><p class="muted" id="format">Ready to generate</p></div></div>
+<div class="preview" id="preview"><p>Your generated document will appear here.<br>Nothing is uploaded to an external service.</p></div>
+<div id="output-actions" hidden><a class="download" id="download">Download</a><a class="download" id="open" target="_blank" rel="noopener noreferrer">Open / print</a></div>
+<p class="muted" style="margin-top:14px">For physical cards, print PDFs at Actual size / 100%, not Fit to page.</p>
+</section>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const hints = {
+ ymca_letter_6up:"Six cards on US Letter.", ymca_letter_1up:"One card on US Letter.",
+ ymca_cr80_1up:"Single card-sized PDF.", ymca_letter_6up_mixed:"Three plain and three checksum cards.",
+ avery5164_6up:"Six labels on Avery 5164 / 8164.",
+ barcode_png:"Raster barcode image.", barcode_svg:"Vector barcode image."
+};
+let objectURL = null;
+function status(message,error=false){$("status").textContent=message;$("status").classList.toggle("error",error)}
+function clearPreview(){
+ if(objectURL) URL.revokeObjectURL(objectURL);
+ objectURL=null;
+ $("preview").replaceChildren(Object.assign(document.createElement("p"),{textContent:"Your generated document will appear here."}));
+ $("output-actions").hidden=true;$("format").textContent="Ready to generate";
+ for(const id of ["open","download"]) $(id).removeAttribute("href");
+}
+function rules(){
+ const r=$("report").value, barcode=r.startsWith("barcode_");
+ $("checksum").disabled=r==="ymca_letter_6up_mixed";
+ $("text").disabled=!barcode;$("no_holes").disabled=barcode;
+ $("layout-hint").textContent=hints[r];
+}
+$("report").addEventListener("change",rules);
+$("association").addEventListener("change",()=>{
+ const d=$("association").selectedOptions[0].dataset;
+ $("header_url").value=d.url||"ymca.org";$("header_title").value=d.title||"YMCA";
+});
+$("reveal").addEventListener("change",()=>{$("data").type=$("reveal").checked?"text":"password"});
+$("clear").addEventListener("click",()=>{$("settings").reset();$("data").type="password";clearPreview();rules();status("")});
+$("settings").addEventListener("submit",async event=>{
+ event.preventDefault();clearPreview();$("generate").disabled=true;$("clear").disabled=true;status("Rendering…");
+ const payload={};
+ for(const key of ["data","report","header_url","header_title"]) payload[key]=$(key).value;
+ for(const key of ["checksum","plus","text","no_holes"]) payload[key]=$(key).checked&&!$(key).disabled;
+ const label=$("report").selectedOptions[0].textContent;
+ try{
+  const response=await fetch("/render",{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":document.querySelector('meta[name="csrf-token"]').content},body:JSON.stringify(payload),cache:"no-store"});
+  if(!response.ok){const error=await response.json().catch(()=>({}));throw Error(error.error||"Unable to render.")}
+  const blob=await response.blob(), ext={"application/pdf":"pdf","image/png":"png","image/svg+xml":"svg"}[blob.type];
+  if(!ext) throw Error("Unexpected output format.");
+  objectURL=URL.createObjectURL(blob);
+  const node=document.createElement(ext==="pdf"?"iframe":"img");
+  node.src=objectURL;node.title="Generated document";node.alt="Generated barcode";
+  $("preview").replaceChildren(node);
+  $("download").href=objectURL;$("download").download="card-output."+ext;
+  $("open").href=objectURL;$("output-actions").hidden=false;
+  $("format").textContent=label;status("Ready. Download or open the output to print.");
+ }catch(error){status(error.message,true)}
+ finally{$("generate").disabled=false;$("clear").disabled=false;}
+});
+window.addEventListener("pagehide",()=>{if(objectURL)URL.revokeObjectURL(objectURL)});
+rules();
+</script>
+</body></html>
